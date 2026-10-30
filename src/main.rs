@@ -5,7 +5,7 @@ const CLAUDE_MODEL: &str = "claude-sonnet-5-5";
 const OPENAI_MODEL: &str = "gpt-5"; // replace with whichever OpenAI model you want to use
 
 const TURNS: usize = 5;
-const OPENER: &str = "Hi! What's one idea you find genuinely fascinating?";
+const OPENER: &str = "Raquel is struggling finding a job. What's a way she can increase her developer skills in order to be more marketable to employers and against her competition? It seems like only seniors are getting jobs these days, and she is a mid-level developer. What can she do to get a job?";
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -25,10 +25,18 @@ async fn ask_claude(client: &reqwest::Client, history: &[Value]) -> Result<Strin
         .json()
         .await?;
 
-    Ok(res["content"][0]["text"]
-        .as_str()
-        .ok_or_else(|| format!("unexpected Claude response: {res}"))?
-        .to_string())
+    // Skip thinking blocks; the reply is in the "text" block(s).
+    let text: String = res["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|b| b["type"] == "text")
+        .filter_map(|b| b["text"].as_str())
+        .collect();
+    if text.is_empty() {
+        return Err(format!("unexpected Claude response: {res}").into());
+    }
+    Ok(text)
 }
 
 async fn ask_openai(client: &reqwest::Client, history: &[Value]) -> Result<String> {
@@ -55,9 +63,12 @@ async fn ask_openai(client: &reqwest::Client, history: &[Value]) -> Result<Strin
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env if present; variables already set in the shell take precedence.
+    dotenvy::dotenv().ok();
+
     for key in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"] {
         if env::var(key).is_err() {
-            return Err(format!("{key} is not set. Add it to ~/.zshrc and run `source ~/.zshrc`.").into());
+            return Err(format!("{key} is not set. Add it to .env in the project root.").into());
         }
     }
 
